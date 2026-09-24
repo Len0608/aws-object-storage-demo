@@ -4,7 +4,7 @@ import logging
 import os
 
 from actions.output import ActionOutput
-from exceptions import LocalFileNotFoundError, ValidationError
+from exceptions import ExecutionError, LocalFileNotFoundError, ValidationError
 from fields.input import InputFields
 from fields.output import OutputFields
 from manager import ExtensionManager
@@ -57,8 +57,8 @@ def upload_file(input_data: InputFields) -> ActionOutput:
     bucket_name = input_data.bucket_name.value.strip()
     local_file = input_data.local_file.value.strip()
     s3_object_key = input_data.s3_object_key.value.strip()
-    aws_access_key_id: str = input_data.aws_credentials["user"]
-    aws_secret_access_key: str = input_data.aws_credentials["password"]
+    aws_access_key_id: str = input_data.aws_credentials.user
+    aws_secret_access_key: str = input_data.aws_credentials.password
 
     # ------------------------------------------------------------------ #
     # Step 2: Initialise OutputFields for real-time UI updates            #
@@ -81,7 +81,6 @@ def upload_file(input_data: InputFields) -> ActionOutput:
     # ------------------------------------------------------------------ #
     if extension_manager.is_cancelled():
         logger.warning("Operation cancelled before S3 client creation")
-        from exceptions import ExecutionError
         raise ExecutionError("Operation cancelled by user")
 
     # ------------------------------------------------------------------ #

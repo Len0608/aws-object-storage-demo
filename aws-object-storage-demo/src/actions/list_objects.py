@@ -4,7 +4,7 @@ import logging
 import os
 
 from actions.output import ActionOutput
-from exceptions import ValidationError
+from exceptions import ExecutionError, ValidationError
 from fields.input import InputFields
 from fields.output import OutputFields
 from manager import ExtensionManager
@@ -52,8 +52,8 @@ def list_objects(input_data: InputFields) -> ActionOutput:
 
     aws_region = input_data.aws_region.value.strip()
     bucket_name = input_data.bucket_name.value.strip()
-    aws_access_key_id: str = input_data.aws_credentials["user"]
-    aws_secret_access_key: str = input_data.aws_credentials["password"]
+    aws_access_key_id: str = input_data.aws_credentials.user
+    aws_secret_access_key: str = input_data.aws_credentials.password
 
     # ------------------------------------------------------------------ #
     # Step 2: Read cap configuration                                       #
@@ -76,7 +76,6 @@ def list_objects(input_data: InputFields) -> ActionOutput:
     # ------------------------------------------------------------------ #
     if extension_manager.is_cancelled():
         logger.warning("Operation cancelled before S3 client creation")
-        from exceptions import ExecutionError
         raise ExecutionError("Operation cancelled by user")
 
     # ------------------------------------------------------------------ #
