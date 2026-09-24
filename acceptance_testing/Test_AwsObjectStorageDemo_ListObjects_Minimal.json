@@ -1,0 +1,55 @@
+{
+  "type": "taskUniversal",
+  "name": "Test_AwsObjectStorageDemo_ListObjects_Minimal",
+  "template": "Aws Object Storage Demo",
+  "agent": "nginx-with-sidecar - AKS-SIDECAR-TEST",
+  "choiceField1": {
+    "label": "Action",
+    "name": "action",
+    "value": "List Objects"
+  },
+  "credentialField1": {
+    "label": "AWS Credentials",
+    "name": "aws_credentials",
+    "value": "AWS_key_Secret"
+  },
+  "textField1": {
+    "label": "AWS Region",
+    "name": "aws_region",
+    "value": "us-east-1"
+  },
+  "textField2": {
+    "label": "Bucket Name",
+    "name": "bucket_name",
+    "value": "salescommission"
+  },
+  "textField3": {
+    "label": "Local File Path",
+    "name": "local_file",
+    "value": null
+  },
+  "textField4": {
+    "label": "S3 Object Key",
+    "name": "s3_object_key",
+    "value": null
+  },
+  "simulation": false,
+  "startHeld": false,
+  "exclusiveWithSelf": false,
+  "executionRestriction": "None",
+  "retryIndefinitely": false,
+  "retryMaximum": 0,
+  "retryInterval": 60,
+  "retryExitCodes": null,
+  "retrySuppressFailure": false,
+  "exitCodeProcessing": "Success Exitcode Range",
+  "exitCodes": "0",
+  "outputType": "STDOUT",
+  "outputReturnType": "NONE",
+  "outputReturnSline": "1",
+  "outputReturnNline": "100",
+  "credentials": null,
+  "runtimeDir": null,
+  "environment": [],
+  "variables": []
+}
