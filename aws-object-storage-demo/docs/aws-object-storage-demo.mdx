@@ -1,0 +1,328 @@
+---
+title: AWS Object Storage Demo
+description: Integrate Stonebranch UAC with Amazon S3 to list bucket objects and upload files.
+version: 1.0.0
+date: 2026-09-24
+---
+
+# AWS Object Storage Demo
+
+**Version:** 1.0.0 | **Date:** 2026-09-24 | **API Level:** 1.6.0
+
+---
+
+## Overview
+
+The **AWS Object Storage Demo** Universal Extension integrates Stonebranch Universal Automation Center (UAC) with **Amazon Simple Storage Service (Amazon S3)**, the AWS cloud object storage platform.
+
+This extension demonstrates how automated workflows can interact with S3 buckets directly from UAC tasks. It provides two operations:
+
+- **List Objects** — retrieve and display the contents of any S3 bucket
+- **Upload File** — push a local file from the Universal Agent host into a specified S3 bucket
+
+All AWS communication is handled via the **boto3** Python SDK (AWS SDK for Python), which is fully bundled with the extension. No additional software installation is required on the Universal Agent host.
+
+The extension authenticates with AWS using an **Access Key ID** and **Secret Access Key** pair, stored securely as a UAC Credential and passed to the S3 client at execution time.
+
+---
+
+## Prerequisites
+
+Before using this extension, ensure the following are in place:
+
+### Amazon Web Services
+
+- An active **AWS account** with access to Amazon S3.
+- An **S3 bucket** that the extension will operate on. The bucket must exist in the specified AWS region before task execution.
+- An **IAM user** (or IAM role) with the following S3 permissions on the target bucket:
+  - `s3:ListBucket` — required for the **List Objects** action
+  - `s3:PutObject` — required for the **Upload File** action
+- An **AWS Access Key ID** and **AWS Secret Access Key** generated for that IAM user.
+
+### Stonebranch UAC
+
+- A **Universal Agent** running on a Linux x86_64 host, version compatible with API Level 1.6.0 or higher (UAC 7.6+).
+- A **UAC Credential** entity configured with:
+  - **Username** field → AWS Access Key ID
+  - **Password** field → AWS Secret Access Key
+- For the **Upload File** action: the local file to be uploaded must already exist on the Universal Agent host filesystem at the specified path.
+
+---
+
+## Installation
+
+The AWS Object Storage Demo extension is installed by importing the extension package into UAC.
+
+1. Download the extension package (`.zip` file) from the Stonebranch Integration Hub or your internal distribution channel.
+2. In UAC, navigate to **Configuration → Universal Templates**.
+3. Click **Import Template** and upload the `.zip` file.
+4. UAC imports the template and makes the **Aws Object Storage Demo** task type available when creating new tasks.
+
+After import, the extension and all its Python dependencies (including boto3) are available to any Universal Agent without additional setup.
+
+---
+
+## Authentication Setup
+
+This extension authenticates with AWS using **long-term IAM credentials** (Access Key ID + Secret Access Key). These credentials are stored in a UAC Credential entity and referenced in each task instance via the **AWS Credentials** field.
+
+### Creating the UAC Credential
+
+1. In UAC, navigate to **Configuration → Credentials** and click **New Credential**.
+2. Set the **Credential Type** to a general-purpose type (e.g., *Other*).
+3. Enter the **AWS Access Key ID** in the **Username** field.
+4. Enter the **AWS Secret Access Key** in the **Password** field.
+5. Give the credential a meaningful name (e.g., `AWS_S3_Production`) and save.
+
+### Using the Credential in a Task
+
+In the task form, select the credential you created in the **AWS Credentials** field. The extension reads the `Username` attribute as the Access Key ID and the `Password` attribute as the Secret Access Key, then passes them directly to the boto3 S3 client — they are never written to disk or logged.
+
+---
+
+## Task Configuration
+
+The following fields are available when configuring an **Aws Object Storage Demo** task.
+
+| Field Name | Type | Required | Default | Description |
+|---|---|---|---|---|
+| **Action** | Choice | No | `List Objects` | Selects which S3 operation to perform. Determines which additional fields are shown. Options: `List Objects`, `Upload File`. |
+| **AWS Credentials** | Credential | Yes | — | UAC Credential whose Username is the AWS Access Key ID and Password is the AWS Secret Access Key. |
+| **AWS Region** | Text | Yes | — | The AWS region where the target S3 bucket resides. Must be a valid AWS region identifier, e.g. `us-east-1`, `eu-west-1`. |
+| **Bucket Name** | Text | Yes | — | The name of the target S3 bucket. Must be an existing bucket in the specified region. |
+| **Local File Path** | Text | Yes (Upload File only) | — | Absolute path to the file on the Universal Agent host that will be uploaded to S3. Example: `/tmp/reports/q3.csv`. Visible only when **Action** is `Upload File`. |
+| **S3 Object Key** | Text | Yes (Upload File only) | — | The destination key (path and filename) within the S3 bucket where the file will be stored. Example: `reports/q3.csv`. Visible only when **Action** is `Upload File`. |
+| **Status** | Text (Output Only) | — | — | Brief result message set on every completion, whether success or failure. Visible in the task execution list. |
+| **Result** | Text (Output Only) | — | — | Action-specific result value set on successful completion (e.g., object count or S3 URI). Visible in the task execution list. |
+
+### Conditional Field Visibility
+
+| Field | Visible When |
+|---|---|
+| Local File Path | **Action** = `Upload File` |
+| S3 Object Key | **Action** = `Upload File` |
+
+When **Action** is `List Objects`, the Local File Path and S3 Object Key fields are hidden and their values are not required.
+
+---
+
+## Actions
+
+### List Objects
+
+Lists all objects stored in the specified S3 bucket and displays their metadata in a formatted table.
+
+**Description:** Queries the S3 bucket using paginated API calls to retrieve every object. For each object, the Key (name/path), Size (bytes), and Last Modified timestamp (ISO 8601) are collected. Results are printed to STDOUT as an ASCII table. If the bucket contains more objects than the configured display limit, the output is truncated and a note is printed showing the total object count.
+
+**Required Inputs:**
+- AWS Credentials
+- AWS Region
+- Bucket Name
+
+**Optional Configuration:**
+- `UE_MAX_OUTPUT_RECORDS` environment variable (integer, default `100`) — controls the maximum number of objects included in the STDOUT table. Set this on the Universal Agent environment if buckets are very large.
+
+**Expected Output (STDOUT):**
+
+```
+╭────────────────────┬────────┬──────────────────────╮
+│ Key                │   Size │ Last Modified        │
+├────────────────────┼────────┼──────────────────────┤
+│ reports/q3.csv     │  12345 │ 2026-09-24T10:00:00Z │
+│ data/input.csv     │  67890 │ 2026-09-23T08:30:00Z │
+╰────────────────────┴────────┴──────────────────────╯
+```
+
+If the total number of objects exceeds the display limit, a truncation note is appended:
+
+```
+Note: Output limited to 100 records. Total objects in bucket: 2847.
+```
+
+**Output Fields set on completion:**
+- **Status** → `Success: Listed 42 objects in 'my-demo-bucket'`
+- **Result** → `42 objects`
+
+---
+
+### Upload File
+
+Uploads a local file from the Universal Agent host to a specified location in the S3 bucket.
+
+**Description:** Validates that the local file exists at the specified path before making any network call. Once confirmed, the file is uploaded to the S3 bucket under the given object key using the boto3 `upload_file` API. On success, the full S3 URI of the uploaded object is printed to STDOUT and written to the output fields.
+
+**Required Inputs:**
+- AWS Credentials
+- AWS Region
+- Bucket Name
+- Local File Path
+- S3 Object Key
+
+**Expected Output (STDOUT):**
+
+```
+Uploaded /tmp/reports/q3.csv to s3://my-demo-bucket/reports/q3.csv
+```
+
+**Output Fields set on completion:**
+- **Status** → `Success: Uploaded to s3://my-demo-bucket/reports/q3.csv`
+- **Result** → `s3://my-demo-bucket/reports/q3.csv`
+
+**Re-run behaviour:** Re-running an Upload File task uploads the file again, silently overwriting any existing object at the same S3 key. No conflict detection is performed.
+
+---
+
+## Output
+
+After each task execution, two output fields are populated and visible in the UAC task execution list:
+
+| Output Field | When Set | Example Value |
+|---|---|---|
+| **Status** | Every execution (success or failure) | `Success: Listed 42 objects in 'my-demo-bucket'` |
+| **Result** | Successful executions only | `42 objects` or `s3://my-demo-bucket/reports/q3.csv` |
+
+### Referencing Outputs in Downstream Tasks
+
+These fields can be referenced by downstream tasks or workflows using UAC variable substitution:
+
+```
+${_task_name_result}
+${_task_name_status}
+```
+
+Replace `_task_name` with the UAC task name in lowercase with spaces replaced by underscores, following your UAC variable naming conventions.
+
+The full structured execution output is also written to the **Extension Output** (unv_output JSON), which includes:
+
+```json
+{
+  "exit_code": 0,
+  "status_description": "Successful Execution",
+  "result": {
+    "objects": [...],
+    "truncated": false,
+    "total_returned": 42
+  }
+}
+```
+
+For an Upload File execution, the result object is:
+
+```json
+{
+  "result": {
+    "s3_uri": "s3://my-demo-bucket/reports/q3.csv"
+  }
+}
+```
+
+---
+
+## Cancel or Control Commands
+
+This extension does not implement custom cancel or control commands. Standard UAC task cancellation applies: when a running task is cancelled in UAC, the Universal Agent sends a TERM signal to the extension process.
+
+The extension checks for cancellation before initiating any S3 API call and terminates cleanly without leaving open connections or temporary files.
+
+---
+
+## Error Handling
+
+The extension classifies errors into distinct categories, each with a specific exit code and status message.
+
+| Error Type | Exit Code | Trigger Condition | Status Message |
+|---|---|---|---|
+| Validation Error | 20 | A required field is empty or missing | `Validation Error: <field-specific message>` |
+| Authentication Error | 1 | Invalid or expired AWS credentials (e.g., `InvalidClientTokenId`, `AuthFailure`, `SignatureDoesNotMatch`) | `Error: Authentication failed — invalid AWS credentials` |
+| Bucket Not Found | 1 | The specified S3 bucket does not exist or is inaccessible (`NoSuchBucket`) | `Error: Bucket '<name>' not found or not accessible` |
+| Local File Not Found | 1 | The local file path does not exist on the agent host (checked before any S3 call) | `Error: Local file not found: '<path>'` |
+| Permission Denied | 1 | The IAM credentials lack the required S3 permissions (`AccessDenied`) | `Error: Permission denied for operation on '<bucket>'` |
+| Network Error | 1 | Cannot reach the S3 endpoint (`EndpointConnectionError`, `ConnectTimeoutError`) | `Error: Network error — cannot connect to S3` |
+| Unexpected Error | 1 | Any other unhandled exception | System error message |
+
+All errors are fatal for the current task execution — the task is marked as failed in UAC. No automatic retry logic is built into the extension.
+
+---
+
+## Example Walkthrough
+
+This walkthrough demonstrates how to configure and run a **List Objects** task against an existing S3 bucket.
+
+### Step 1 — Configure AWS Credentials
+
+1. In UAC, go to **Configuration → Credentials** and create a new Credential.
+2. Enter your **AWS Access Key ID** in the Username field.
+3. Enter your **AWS Secret Access Key** in the Password field.
+4. Name the credential `AWS_S3_Demo` and save.
+
+### Step 2 — Create the Task
+
+1. In UAC, navigate to **Task → Universal Tasks** and click **New Task**.
+2. From the **Universal Template** dropdown, select **Aws Object Storage Demo**.
+3. Give the task a name, for example `List S3 Bucket Contents`.
+
+### Step 3 — Configure the Task Fields
+
+Fill in the task form:
+
+| Field | Value |
+|---|---|
+| Action | `List Objects` |
+| AWS Credentials | `AWS_S3_Demo` |
+| AWS Region | `us-east-1` |
+| Bucket Name | `my-demo-bucket` |
+
+Save the task.
+
+### Step 4 — Execute the Task
+
+1. Right-click the task and select **Launch Task Now**, or trigger it from a workflow.
+2. UAC dispatches the task to the configured Universal Agent.
+3. Monitor execution progress in the **Task Instances** view.
+
+### Step 5 — Review the Output
+
+1. Open the completed task instance.
+2. The **STDOUT** tab shows the formatted object table.
+3. The **Status** output field shows `Success: Listed 5 objects in 'my-demo-bucket'`.
+4. The **Result** output field shows `5 objects`.
+
+To use this result in a downstream task, reference the output variable according to your UAC configuration.
+
+---
+
+### Upload File Example
+
+To upload a local file, repeat the steps above but configure the task as follows:
+
+| Field | Value |
+|---|---|
+| Action | `Upload File` |
+| AWS Credentials | `AWS_S3_Demo` |
+| AWS Region | `us-east-1` |
+| Bucket Name | `my-demo-bucket` |
+| Local File Path | `/tmp/reports/q3.csv` |
+| S3 Object Key | `reports/q3.csv` |
+
+On success, STDOUT shows:
+
+```
+Uploaded /tmp/reports/q3.csv to s3://my-demo-bucket/reports/q3.csv
+```
+
+The **Result** output field contains the full S3 URI: `s3://my-demo-bucket/reports/q3.csv`.
+
+---
+
+## Troubleshooting Tips
+
+| Symptom | Possible Cause | Resolution |
+|---|---|---|
+| Task fails with `Validation Error: AWS credentials are required` | No credential was selected in the AWS Credentials field | Select a valid UAC Credential in the task form |
+| Task fails with `Error: Authentication failed — invalid AWS credentials` | The Access Key ID or Secret Access Key is incorrect, expired, or the IAM user is disabled | Verify the credential values in UAC and confirm the IAM user is active in the AWS Console |
+| Task fails with `Error: Bucket '<name>' not found or not accessible` | The bucket does not exist in the specified region, or the bucket name is misspelled | Confirm the bucket name and region in the AWS S3 Console |
+| Task fails with `Error: Permission denied for operation on '<bucket>'` | The IAM user lacks `s3:ListBucket` (List Objects) or `s3:PutObject` (Upload File) permission | Update the IAM policy to grant the required S3 permissions |
+| Task fails with `Error: Local file not found: '<path>'` | The file at the specified path does not exist on the Universal Agent host at execution time | Confirm the file exists on the agent host and that the path is an absolute path |
+| Task fails with `Error: Network error — cannot connect to S3` | The Universal Agent host cannot reach `s3.<region>.amazonaws.com` over HTTPS | Check network connectivity, firewall rules, and proxy settings on the agent host |
+| STDOUT table is truncated | The bucket contains more objects than the `UE_MAX_OUTPUT_RECORDS` limit (default 100) | Set the `UE_MAX_OUTPUT_RECORDS` environment variable to a higher value on the agent, or accept truncation — all objects are still counted |
+| AWS Region field validation fails at runtime | The entered region string is not a valid AWS region identifier | Use a standard AWS region code such as `us-east-1`, `eu-central-1`, or `ap-southeast-2` |
