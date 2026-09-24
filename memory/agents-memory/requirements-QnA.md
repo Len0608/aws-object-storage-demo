@@ -71,7 +71,7 @@ The requirements establish a clear, minimal scope. The five questions below targ
 - **Rationale**: A formatted table demonstrates the integration's quality and follows the UAC architect best practice for STDOUT output on record-based results. The pure-Python nature means no build or platform risk.
 - **Trade-offs**: O1 adds one lightweight dependency with no binary concerns. O2 avoids the dependency entirely but produces less readable demo output.
 - **Requirement Impact**: If O1 is chosen, `tabulate==0.10.0` is added to `requirements.txt`. STDOUT for List Objects will render as a `rounded_outline` ASCII table.
-- **User's Answer**: O1 — Yes, add tabulate.
+- **User's Answer**: O1 — Yes, add `tabulate`. For a demo extension, a formatted table with columns for Key, Size, and Last Modified is significantly more readable and visually compelling than a raw text list. The library is pure-Python, lightweight, and purpose-built for this use case.
 
 ---
 
@@ -89,7 +89,7 @@ The requirements mention "AWS Credentials" as a field. In UAC there are two dist
 - **Rationale**: A UAC Credential Field is the idiomatic UAC pattern for secure credential management. It avoids coupling the extension to per-agent environment setup, keeps credentials within UAC's security boundary, and allows the same extension to be reused across different AWS accounts simply by swapping the referenced credential. For a demo this also makes the extension easier to showcase cleanly.
 - **Trade-offs**: O1 requires creating a UAC Credential entity before running the task (a one-time setup step). O2 eliminates that step but couples the extension to agent-level configuration and moves credentials outside UAC's management scope.
 - **Requirement Impact**: If O1 is chosen, the template includes a Credential Field labeled "AWS Credentials" (required). If O2 is chosen, no credential field appears in the template, but the task documentation must specify the required agent environment variables.
-- **User's Answer**: O1 — UAC Credential Field (Access Key ID in `user`, Secret Access Key in `password`).
+- **User's Answer**: O1 — UAC Credential Field. Access Key ID stored in the `user` attribute, Secret Access Key in the `password` attribute. This is the standard, secure UAC approach and makes the task definition fully self-contained.
 
 ---
 
@@ -112,7 +112,7 @@ The boto3 `list_objects_v2` API returns per-object metadata including: Key (obje
 - **Rationale**: Pure name listing (O1) is underwhelming for a demo. Full metadata (O3) adds fields like ETag and StorageClass that carry little meaning to most users in a demo context. O2 strikes the practical balance.
 - **Trade-offs**: O2 adds minimal complexity over O1 while significantly improving the demo experience. O3 is more complete but adds noise with fields that are rarely actionable without deeper AWS context.
 - **Requirement Impact**: The selected fields define the STDOUT table columns and the structure of each object entry in the Extension Output `result.objects` array. With O2 selected: `[{"key": "...", "size": 12345, "last_modified": "2026-09-24T10:00:00Z"}, ...]`.
-- **User's Answer**: O2 — Key + Size + Last Modified.
+- **User's Answer**: O2 — Key + Size + Last Modified. This set shows that the integration retrieves meaningful metadata, not just names, while remaining easy to read in a demo context. Size and date are the fields users most commonly care about when browsing object storage.
 
 ---
 
@@ -134,7 +134,7 @@ Proposed fields:
 - **Rationale**: For a demo, the S3 URI after upload is particularly useful — it confirms exactly where the file landed. The object count for List Objects gives immediate feedback on what the bucket contains. Both are short enough to display cleanly in the task list column.
 - **Trade-offs**: O2 adds one more template field to define and set in code. At this scale it is trivially simple. O1 is the bare minimum but misses the demo value of showing the key result at a glance.
 - **Requirement Impact**: Template will include two Output Only Text Fields: a "Status" field (always set) and a "Result" field (set to object count for List Objects, S3 URI for Upload File). Both will have `defaultListView: true` to appear as columns in the UAC task list.
-- **User's Answer**: O2 — Status + Result (object count for List Objects; S3 URI for Upload File).
+- **User's Answer**: O2 — Status + Result. Two output fields strike the recommended balance: status provides an immediately human-readable summary, and the result field (count or S3 URI) gives the most actionable piece of data for each action without needing to open the task logs.
 
 ---
 
@@ -158,4 +158,4 @@ The cap applies only to inline output written to STDOUT and Extension Output. Th
 - **Rationale**: The 100-record default is sufficient for any demo scenario. The environment variable gives flexibility to adjust without code changes. Following this pattern from the start means no rework is needed if the extension moves beyond demo use.
 - **Trade-offs**: O2 adds a small amount of code to read the environment variable and apply the cap. O1 is marginally simpler but introduces a latent risk that is hard to diagnose when it triggers.
 - **Requirement Impact**: The extension will read `UE_MAX_OUTPUT_RECORDS` from `os.environ` (defaulting to `100`) and pass it as `MaxKeys` to `list_objects_v2`. If the bucket contains more objects than the cap, STDOUT will include a line such as: `"Note: Output limited to 100 records. Total objects in bucket: 2847."` The same note will appear in the Extension Output JSON as `result.truncated: true` and `result.total_returned: 2847`.
-- **User's Answer**: O2 — Cap at 100 records by default via UE_MAX_OUTPUT_RECORDS environment variable.
+- **User's Answer**: O2 — cap at 100 records via `UE_MAX_OUTPUT_RECORDS`. Even for an MVP/demo, this is a sensible guard that costs minimal code complexity and prevents unexpected issues if the demo bucket is larger than expected.
