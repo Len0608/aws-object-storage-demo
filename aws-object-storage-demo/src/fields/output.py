@@ -10,57 +10,41 @@ from fields.types import Text
 class OutputFields:
     """Real-time output fields for UAC UI updates.
 
-    Define fields for progress tracking during execution.
-    These fields sync with the UAC UI in real-time and are available
-    in subsequent re-runs via InputFields.previous_output.
-
-    All output fields should use the Text wrapper type.
+    Fields correspond to Output Only fields in template.json:
+    - status  (Text Field 5) — brief result message for every completion
+    - result  (Text Field 6) — action-specific result value on success
     """
 
-    # Define your progress tracking fields here using Text wrapper
-    # Example fields:
-    # status: Optional[Text] = None
-    # progress: Optional[Text] = None
-    # current_item: Optional[Text] = None
-    # items_processed: Optional[Text] = None
-    # last_processed_id: Optional[Text] = None
+    status: Optional[Text] = None
+    result: Optional[Text] = None
 
     def update(self, **fields):
         """Update fields and sync with UAC UI in real-time.
 
         Args:
-            **fields: Field names and values to update (strings will be wrapped in Text)
+            **fields: Field names and string values to update.
+                      String values are automatically wrapped in Text.
         """
         for field_name, field_value in fields.items():
             if hasattr(self, field_name):
-                # Wrap string values in Text type
                 if isinstance(field_value, str):
                     field_value = Text(field_value)
                 setattr(self, field_name, field_value)
         ui.update_output_fields(fields)
 
     def to_dict(self) -> dict:
-        """Get current fields as dictionary.
+        """Return current field values as a plain dictionary.
 
-        Returns:
-            Dict with non-None field values (Text wrappers unwrapped to strings)
+        Text wrappers are unwrapped to their string values.
+        None fields are excluded.
         """
         result = {}
         for k, v in asdict(self).items():
             if v is not None:
-                # Extract value from Text wrapper
-                result[k] = v.value if isinstance(v, Text) else v
+                result[k] = v["value"] if isinstance(v, dict) and "value" in v else v
         return result
 
     def clear(self):
-        """Reset all fields to None.
-
-        Update this method to match your defined fields.
-        """
-        # Add your fields here
-        # self.status = None
-        # self.progress = None
-        # self.current_item = None
-        # self.items_processed = None
-        # self.last_processed_id = None
-        pass
+        """Reset all output fields to None."""
+        self.status = None
+        self.result = None
