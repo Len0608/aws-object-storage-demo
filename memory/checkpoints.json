@@ -7,6 +7,7 @@
     "init",
     "testing/environment-researcher",
     "testing/task-json-generator",
-    "testing/test-graph-builder"
+    "testing/test-graph-builder",
+    "testing/test-runner"
   ]
 }
