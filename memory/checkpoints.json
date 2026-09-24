@@ -4,6 +4,7 @@
     "analysis/requirements-composer",
     "analysis/requirements-refiner",
     "implementation",
-    "init"
+    "init",
+    "testing/environment-researcher"
   ]
 }
