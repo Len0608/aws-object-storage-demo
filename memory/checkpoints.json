@@ -5,6 +5,7 @@
     "analysis/requirements-refiner",
     "implementation",
     "init",
-    "testing/environment-researcher"
+    "testing/environment-researcher",
+    "testing/test-graph-builder"
   ]
 }
