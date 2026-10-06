@@ -60,7 +60,7 @@ The requirements clearly specify the target service (AWS S3), two core actions (
 - **Rationale**: boto3 is specified in the requirements. tabulate eliminates the need for manual column-width calculations and produces professional-quality output for the List Objects display.
 - **Trade-offs**: tabulate adds a minor dependency; the alternative is plain `print()` with manual string padding. For MVP, the clarity gain outweighs the minimal overhead.
 - **Requirement Impact**: None — directly aligned with the "use boto3" requirement and the MVP simplicity goal.
-- **User's Answer**: `boto3==1.43.108` and `tabulate==0.10.0`
+- **User's Answer**: Use `boto3==1.43.108` and `tabulate==0.10.0`
 
 ---
 
@@ -124,7 +124,7 @@ The requirements clearly specify the target service (AWS S3), two core actions (
 - **Rationale**: Key + Size + Last Modified covers the three most actionable attributes for everyday S3 inspection tasks. ETag and StorageClass (Option C) are rarely needed at a glance and widen the table unnecessarily for a demo.
 - **Trade-offs**: Option A is simpler to implement but provides little value beyond a plain `ls`. Option C adds width and rarely-needed fields. Option B is the practical middle ground.
 - **Requirement Impact**: Adds output content specification not present in the requirements document.
-- **User's Answer**: Option B — Key, Size (bytes), Last Modified; ASCII table on STDOUT with `rounded_outline` format; JSON array in Extension Output with `object_count` and object list
+- **User's Answer**: Option B — Key, Size (bytes), Last Modified in an ASCII table on STDOUT; JSON object list with `object_count` and per-object key/size/last_modified in Extension Output
 
 ---
 
@@ -178,7 +178,7 @@ The requirements clearly specify the target service (AWS S3), two core actions (
 - **Rationale**: The S3 URI is immediately usable by downstream automation or for manual verification without opening the AWS Console. The ETag provides a lightweight integrity reference at no extra cost. File size (Option C) is useful but adds a minimal extra step that is not critical for MVP.
 - **Trade-offs**: Option A provides no actionable output. Option B is informative and practical. Option C is slightly more thorough but the extra information is not needed for a demo.
 - **Requirement Impact**: Adds upload confirmation output specification not present in the requirements.
-- **User's Answer**: Option B — `"Uploaded {local_file} to s3://{bucket}/{s3_key}"` on STDOUT; S3 URI + ETag in Extension Output JSON
+- **User's Answer**: Option B — human-readable confirmation with S3 URI on STDOUT; S3 URI + ETag in Extension Output
 
 ---
 
@@ -205,7 +205,7 @@ The requirements clearly specify the target service (AWS S3), two core actions (
 - **Rationale**: Two fields are clean and sufficient. A single `Status` carries the most useful quick-glance summary; a `Result` field gives the key output value without requiring the user to open task details. Option C adds a third field that is blank depending on the action, which feels awkward in the task list view.
 - **Trade-offs**: Option A is simpler but provides less at-a-glance value. Option C is more structured but has fields that are blank half the time.
 - **Requirement Impact**: Adds output field specification not present in the requirements.
-- **User's Answer**: Option B — two output-only fields: `Status` (short outcome message) and `Result` (key actionable value)
+- **User's Answer**: Option B — two output-only fields: `Status` and `Result`
 
 ---
 
@@ -230,4 +230,4 @@ The requirements clearly specify the target service (AWS S3), two core actions (
 - **Rationale**: Simple, architecture-aligned, and sufficient for all error scenarios in this extension. The Status Description field (e.g., `"S3 Error: Access Denied for bucket my-bucket"` or `"Validation Error: Local file /data/file.csv not found"`) provides the human-readable detail without requiring granular return codes.
 - **Trade-offs**: Granular return codes would give upstream automation more programmatic detail but add implementation complexity inconsistent with the MVP goal.
 - **Requirement Impact**: Adds return code specification not present in the requirements.
-- **User's Answer**: Standard scheme: `0` = success, `1` = runtime failure, `20` = validation error
+- **User's Answer**: Standard three-code scheme: `0` = success, `1` = runtime failure, `20` = validation error
