@@ -52,3 +52,72 @@ class UnexpectedSystemError(ExecutionError):
     """Raised for unexpected system errors."""
     exit_code = 1
     message = "System Error"
+
+class ValidationError(ExecutionError):
+    """
+    Raised when user-supplied input fails validation before any external call.
+
+    Use when:
+    - A required field value is missing or empty
+    - A local file path does not exist on the agent host
+    - Any pre-flight input check fails that does not depend on an external service
+    """
+    exit_code = 20
+    message = "Validation Error"
+
+class S3AuthenticationError(ExecutionError):
+    """
+    Raised when AWS credentials are rejected by the S3 service.
+
+    Use when botocore.exceptions.ClientError is raised with error codes:
+    InvalidClientTokenId, AuthFailure, SignatureDoesNotMatch, InvalidAccessKeyId.
+    Indicates the credentials stored in the UAC Credential entity are incorrect
+    or have been revoked and must be corrected before retrying.
+    """
+    exit_code = 1
+    message = "S3 Authentication Error"
+
+class S3BucketNotFoundError(ExecutionError):
+    """
+    Raised when the specified S3 bucket does not exist or is in a different region.
+
+    Use when botocore.exceptions.ClientError is raised with error code NoSuchBucket.
+    Non-transient — the bucket name or aws_region field must be corrected.
+    """
+    exit_code = 1
+    message = "S3 Bucket Not Found"
+
+class S3AccessDeniedError(ExecutionError):
+    """
+    Raised when the IAM policy does not permit the requested S3 operation.
+
+    Use when botocore.exceptions.ClientError is raised with error code AccessDenied.
+    Non-transient — the IAM user or role permissions must be updated.
+    """
+    exit_code = 1
+    message = "S3 Access Denied"
+
+class S3ConnectionError(ExecutionError):
+    """
+    Raised when a network-level failure prevents reaching the AWS S3 endpoint.
+
+    Use when any of the following botocore exceptions occur:
+    botocore.exceptions.ConnectTimeoutError,
+    botocore.exceptions.EndpointConnectionError,
+    botocore.exceptions.ConnectionError.
+    Potentially transient — a retry may succeed once connectivity is restored.
+    """
+    exit_code = 1
+    message = "S3 Connection Error"
+
+class S3UploadError(ExecutionError):
+    """
+    Raised when a file upload to S3 fails or is interrupted mid-transfer.
+
+    Use when boto3.exceptions.S3UploadFailedError is raised, or when a
+    botocore.exceptions.ClientError occurs specifically during an upload operation
+    and does not map to a more specific exception type.
+    Potentially transient — the upload may succeed on retry.
+    """
+    exit_code = 1
+    message = "S3 Upload Error"

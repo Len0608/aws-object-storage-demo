@@ -1,54 +1,71 @@
 """ActionOutput dataclass for action return values."""
 
 from dataclasses import dataclass
-from typing import Optional, Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 
 @dataclass
 class ActionOutput:
     """Output from action functions.
 
-    Define fields based on your extension's output needs.
-    Control fields (stdout_options, output_options) are populated from InputFields.
+    Fields cover both actions:
+    - List Objects: object_count, objects, truncated, total_count
+    - Upload File: s3_uri, bucket, key, etag
+
+    No stdout_options / output_options control fields exist in this template,
+    so print_output() is a no-op (STDOUT is written directly inside each action)
+    and to_dict() includes all non-None fields unconditionally.
     """
 
-    # Define your output fields here
-    # Example fields:
-    # resource_id: Optional[str] = None
-    # resource_name: Optional[str] = None
-    # details: Optional[Dict[str, Any]] = None
-    # items: Optional[List[Dict[str, Any]]] = None
-    # metadata: Optional[Dict[str, Any]] = None
+    # List Objects output fields
+    object_count: Optional[int] = None
+    objects: Optional[List[Dict[str, Any]]] = None
+    truncated: Optional[bool] = None
+    total_count: Optional[int] = None
 
-    # Control fields (from template Choice fields)
-    stdout_options: List[str] = None
-    output_options: List[str] = None
+    # Upload File output fields
+    s3_uri: Optional[str] = None
+    bucket: Optional[str] = None
+    key: Optional[str] = None
+    etag: Optional[str] = None
 
-    def __post_init__(self):
-        """Initialize control fields with defaults."""
-        if self.stdout_options is None:
-            self.stdout_options = []
-        if self.output_options is None:
-            self.output_options = []
+    def print_output(self) -> None:
+        """No additional STDOUT output.
 
-    def print_output(self):
-        """Print to STDOUT based on stdout_options.
-
-        Implement printing logic based on user selections.
-        Empty list = print everything (if no control fields in template)
+        Each action function writes its own output (ASCII table, confirmation
+        message, truncation notice) directly to STDOUT during execution.
+        This method intentionally does nothing.
         """
-        # Implement based on your fields
-        pass
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert to dict for Extension Output (unv_output).
 
-        Returns dict based on output_options selections.
-        Empty list = include everything (if no control fields in template)
-        """
-        include_all = len(self.output_options) == 0
-        output = {}
+        No output_options control field exists in this template, so all
+        non-None fields are included unconditionally.
 
-        # Implement based on your fields
+        Returns:
+            Dict containing all non-None output fields.
+        """
+        output: Dict[str, Any] = {}
+
+        # List Objects fields
+        if self.object_count is not None:
+            output["object_count"] = self.object_count
+        if self.objects is not None:
+            output["objects"] = self.objects
+        if self.truncated is not None:
+            output["truncated"] = self.truncated
+        if self.total_count is not None:
+            output["total_count"] = self.total_count
+
+        # Upload File fields
+        if self.s3_uri is not None:
+            output["s3_uri"] = self.s3_uri
+        if self.bucket is not None:
+            output["bucket"] = self.bucket
+        if self.key is not None:
+            output["key"] = self.key
+        if self.etag is not None:
+            output["etag"] = self.etag
 
         return output

@@ -1,13 +1,14 @@
-"""Actions module - Business logic implementations."""
+"""Actions module — business logic implementations."""
 
+from actions.list_objects import list_objects
 from actions.output import ActionOutput
+from actions.upload_file import upload_file
 from manager import ExtensionManager
+
 extension_manager = ExtensionManager()
 
-# Import your action functions here
-# from actions.action_name import action_function
-
-# Map action names to functions
+# Maps input_data.action.value strings to action functions
 ACTION_MAPPER = {
-    # "action_name": action_function,
+    "List Objects": list_objects,
+    "Upload File": upload_file,
 }
