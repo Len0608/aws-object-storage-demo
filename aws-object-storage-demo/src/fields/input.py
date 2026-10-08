@@ -43,6 +43,7 @@ class InputFields:
     bucket_name: Optional[Text] = None
     local_file: Optional[Text] = None
     s3_object_key: Optional[Text] = None
+    result_summary: Optional[Text] = None
 
     # Previous run output (auto-populated for re-runs)
     previous_output: Optional[OutputFields] = None

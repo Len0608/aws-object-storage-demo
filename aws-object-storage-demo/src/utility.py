@@ -1,26 +1,32 @@
 """
-Utility module for the AWS Object Storage Demo UAC Universal Extension.
+Utility functions for the AWS Object Storage extension.
 
-Provides S3ClientUtility — a class that encapsulates all AWS S3 API interactions
-including client initialization, object listing via paginator, file upload, ETag
-retrieval, and boto3 exception classification into typed extension exceptions.
+Provides:
+- create_s3_client: S3 client factory — constructs boto3 S3 client from credentials
+- get_max_records: Reads UE_MAX_OUTPUT_RECORDS environment variable with safe default
+- format_objects_table: Caps object list and renders ASCII table for STDOUT
+- classify_boto3_error: Translates boto3/botocore exceptions to extension exceptions
 """
 import logging
-from typing import Any, NoReturn
+import os
+from datetime import datetime, timezone
+from typing import Any, Optional
 
 import boto3
-import boto3.exceptions
 import botocore.exceptions
+from tabulate import tabulate
 
 from exceptions import (
-    S3AccessDeniedError,
     S3AuthenticationError,
     S3BucketNotFoundError,
-    S3ConnectionError,
+    S3InvalidRegionError,
+    S3OperationError,
     S3UploadError,
 )
 
 logger = logging.getLogger("UNV")
+
+_DEFAULT_MAX_RECORDS: int = 100
 
 _AUTH_ERROR_CODES: frozenset[str] = frozenset({
     "InvalidClientTokenId",
@@ -28,173 +34,177 @@ _AUTH_ERROR_CODES: frozenset[str] = frozenset({
     "SignatureDoesNotMatch",
     "InvalidAccessKeyId",
 })
+_BUCKET_NOT_FOUND_CODES: frozenset[str] = frozenset({"NoSuchBucket"})
+_REGION_ERROR_CODES: frozenset[str] = frozenset({"InvalidRegion"})
 
 
-class S3ClientUtility:
+def create_s3_client(
+    aws_access_key_id: str,
+    aws_secret_access_key: str,
+    region_name: str,
+) -> Any:
     """
-    Encapsulates all AWS S3 API interactions for the AWS Object Storage Demo extension.
+    Create and return a configured boto3 S3 client.
 
-    Handles client initialization, object listing via paginator, file upload,
-    ETag retrieval, and boto3 exception classification into typed extension exceptions.
+    Args:
+        aws_access_key_id: AWS Access Key ID (from UAC Credential user field).
+        aws_secret_access_key: AWS Secret Access Key (from UAC Credential password field).
+        region_name: AWS region identifier (e.g., 'us-east-1').
+
+    Returns:
+        A boto3 S3 client instance.
+
+    Raises:
+        S3InvalidRegionError: If region_name is empty or blank.
     """
+    if not region_name.strip():
+        raise S3InvalidRegionError("Region name must not be empty.")
+    logger.info("Creating S3 client for region: %s", region_name)
+    client: Any = boto3.client(
+        "s3",
+        aws_access_key_id=aws_access_key_id,
+        aws_secret_access_key=aws_secret_access_key,
+        region_name=region_name,
+    )
+    logger.debug("S3 client created successfully for region: %s", region_name)
+    return client
 
-    def __init__(self, access_key_id: str, secret_access_key: str, region_name: str) -> None:
-        """
-        Initialize the S3 client with static AWS credentials and a target region.
 
-        Args:
-            access_key_id: AWS Access Key ID (from UAC Credential user attribute).
-            secret_access_key: AWS Secret Access Key (from UAC Credential password attribute).
-            region_name: AWS region where the target bucket resides (e.g. 'us-east-1').
-        """
-        logger.info("Initializing S3 client for region: %s", region_name)
-        self._client = boto3.client(
-            "s3",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_access_key,
-            region_name=region_name,
-        )
-        logger.debug("S3 client initialized")
+def get_max_records() -> int:
+    """
+    Read and return the UE_MAX_OUTPUT_RECORDS environment variable.
 
-    def list_objects(self, bucket_name: str) -> tuple[list[dict[str, Any]], int]:
-        """
-        List all objects in a bucket using the list_objects_v2 paginator.
-
-        Paginates through all result pages and collects every object's Key, Size,
-        and LastModified into a flat list. The caller is responsible for applying
-        any output cap and formatting timestamps.
-
-        Args:
-            bucket_name: Name of the S3 bucket to list.
-
-        Returns:
-            A tuple (objects, total_count) where objects is a list of dicts with
-            keys 'Key' (str), 'Size' (int), 'LastModified' (datetime UTC), and
-            total_count is the number of objects collected across all pages.
-
-        Raises:
-            S3AuthenticationError: When AWS credentials are rejected.
-            S3BucketNotFoundError: When the bucket does not exist or is in a different region.
-            S3AccessDeniedError: When the IAM policy denies the ListBucket operation.
-            S3ConnectionError: When a network-level failure prevents reaching AWS endpoints.
-        """
-        logger.info("Listing all objects in bucket: %s", bucket_name)
-        objects: list[dict[str, Any]] = []
-
-        try:
-            paginator = self._client.get_paginator("list_objects_v2")
-            for page in paginator.paginate(Bucket=bucket_name):
-                page_contents = page.get("Contents", [])
-                logger.debug("Received page with %d object(s)", len(page_contents))
-                for obj in page_contents:
-                    objects.append({
-                        "Key": obj["Key"],
-                        "Size": obj["Size"],
-                        "LastModified": obj["LastModified"],
-                    })
-        except botocore.exceptions.ClientError as e:
-            self._classify_client_error(e, context="list_objects")
-        except botocore.exceptions.ConnectionError as e:
-            logger.error("Network error listing objects in '%s': %s", bucket_name, str(e))
-            raise S3ConnectionError(str(e))
-
-        total_count = len(objects)
-        logger.info("Collected %d object(s) from bucket '%s'", total_count, bucket_name)
-        return objects, total_count
-
-    def upload_file(self, local_file_path: str, bucket_name: str, s3_object_key: str) -> None:
-        """
-        Upload a local file to the specified S3 bucket and key.
-
-        Args:
-            local_file_path: Absolute path to the local file on the agent host.
-            bucket_name: Name of the S3 bucket destination.
-            s3_object_key: Target object key within the bucket.
-
-        Raises:
-            S3AuthenticationError: When AWS credentials are rejected.
-            S3BucketNotFoundError: When the bucket does not exist.
-            S3AccessDeniedError: When the IAM policy denies the PutObject operation.
-            S3ConnectionError: When a network-level failure prevents reaching AWS endpoints.
-            S3UploadError: When the upload fails or is interrupted mid-transfer.
-        """
+    Returns:
+        Parsed positive integer value. Falls back to 100 if the variable is
+        absent, non-integer, or less than 1.
+    """
+    raw: str = os.environ.get("UE_MAX_OUTPUT_RECORDS", "")
+    try:
+        value: int = int(raw)
+        if value < 1:
+            raise ValueError("Value must be a positive integer.")
+        logger.info("UE_MAX_OUTPUT_RECORDS effective cap: %d", value)
+        return value
+    except (ValueError, TypeError):
         logger.info(
-            "Uploading '%s' to s3://%s/%s",
-            local_file_path, bucket_name, s3_object_key,
+            "UE_MAX_OUTPUT_RECORDS not set or invalid (%r); defaulting to %d",
+            raw,
+            _DEFAULT_MAX_RECORDS,
         )
-        try:
-            self._client.upload_file(local_file_path, bucket_name, s3_object_key)
-            logger.info("Upload complete: s3://%s/%s", bucket_name, s3_object_key)
-        except boto3.exceptions.S3UploadFailedError as e:
-            logger.error("Upload failed for '%s': %s", local_file_path, str(e))
-            raise S3UploadError(str(e))
-        except botocore.exceptions.ClientError as e:
-            self._classify_client_error(e, context="upload_file")
-        except botocore.exceptions.ConnectionError as e:
-            logger.error("Network error uploading '%s': %s", local_file_path, str(e))
-            raise S3ConnectionError(str(e))
+        return _DEFAULT_MAX_RECORDS
 
-    def get_etag(self, bucket_name: str, s3_object_key: str) -> str:
-        """
-        Retrieve the ETag of an S3 object via head_object, with surrounding quotes stripped.
 
-        S3 returns ETags wrapped in double-quotes (e.g. '"abc123"'); this method
-        strips those characters before returning.
+def format_objects_table(
+    objects: list[dict],
+    max_records: Optional[int] = None,
+) -> tuple[str, list[dict], int, Optional[str]]:
+    """
+    Apply the output cap to an S3 object list and render an ASCII table.
 
-        Args:
-            bucket_name: Name of the S3 bucket.
-            s3_object_key: Key of the S3 object.
+    Each object dict must contain:
+        - 'key' (str): S3 object key.
+        - 'size' (int): Object size in bytes.
+        - 'last_modified' (datetime | str): Last modified timestamp.
 
-        Returns:
-            ETag string with surrounding double-quote characters removed.
+    Args:
+        objects: Full list of S3 object records.
+        max_records: Maximum rows to display. Reads UE_MAX_OUTPUT_RECORDS if None.
 
-        Raises:
-            S3AuthenticationError: When AWS credentials are rejected.
-            S3AccessDeniedError: When the IAM policy denies the HeadObject operation.
-            S3ConnectionError: When a network-level failure prevents reaching AWS endpoints.
-        """
-        logger.info("Retrieving ETag for s3://%s/%s", bucket_name, s3_object_key)
-        try:
-            response = self._client.head_object(Bucket=bucket_name, Key=s3_object_key)
-            etag: str = response["ETag"].strip('"')
-            logger.debug("ETag retrieved: %s", etag)
-            return etag
-        except botocore.exceptions.ClientError as e:
-            self._classify_client_error(e, context="get_etag")
-        except botocore.exceptions.ConnectionError as e:
-            logger.error(
-                "Network error retrieving ETag for s3://%s/%s: %s",
-                bucket_name, s3_object_key, str(e),
+    Returns:
+        A 4-tuple of:
+            - table_str: Rendered ASCII table string (rounded_outline format).
+            - sliced_objects: Records capped to max_records.
+            - total_count: Total number of objects before capping.
+            - truncation_notice: Warning string when displayed < total, else None.
+    """
+    if max_records is None:
+        max_records = get_max_records()
+
+    total_count: int = len(objects)
+    sliced_objects: list[dict] = objects[:max_records]
+    displayed_count: int = len(sliced_objects)
+
+    rows: list[list] = []
+    for obj in sliced_objects:
+        last_modified: Any = obj["last_modified"]
+        if isinstance(last_modified, datetime):
+            last_modified_str: str = (
+                last_modified.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
             )
-            raise S3ConnectionError(str(e))
+        else:
+            last_modified_str = str(last_modified)
+        rows.append([obj["key"], obj["size"], last_modified_str])
 
-    def _classify_client_error(
-        self,
-        error: botocore.exceptions.ClientError,
-        context: str,
-    ) -> NoReturn:
-        """
-        Classify a botocore ClientError by error code and raise the matching typed exception.
+    table_str: str = tabulate(
+        rows,
+        headers=["Key", "Size (B)", "Last Modified"],
+        tablefmt="rounded_outline",
+    )
 
-        Args:
-            error: The ClientError instance to classify.
-            context: Short label identifying the calling operation, used in log messages.
-
-        Raises:
-            S3AuthenticationError: For authentication-related error codes.
-            S3BucketNotFoundError: When the error code is NoSuchBucket.
-            S3AccessDeniedError: When the error code is AccessDenied.
-            S3UploadError: For any other ClientError code.
-        """
-        error_code: str = error.response.get("Error", {}).get("Code", "")
-        logger.error(
-            "S3 ClientError in %s (code=%s): %s",
-            context, error_code, str(error),
+    truncation_notice: Optional[str] = None
+    if displayed_count < total_count:
+        truncation_notice = (
+            f"Note: Displaying {displayed_count} of {total_count} objects. "
+            "Set UE_MAX_OUTPUT_RECORDS to increase."
         )
+        logger.warning(
+            "Output truncated: displaying %d of %d objects",
+            displayed_count,
+            total_count,
+        )
+
+    return table_str, sliced_objects, total_count, truncation_notice
+
+
+def classify_boto3_error(exc: Exception, is_upload: bool = False) -> None:
+    """
+    Classify a boto3 or botocore exception and raise the matching extension exception.
+
+    Error code mapping:
+        InvalidClientTokenId | AuthFailure | SignatureDoesNotMatch | InvalidAccessKeyId
+            → S3AuthenticationError
+        NoSuchBucket
+            → S3BucketNotFoundError
+        AccessDenied (bucket scope)
+            → S3BucketNotFoundError
+        InvalidRegion
+            → S3InvalidRegionError
+        Unclassified ClientError when is_upload=True
+            → S3UploadError
+        All remaining ClientError / BotoCoreError
+            → S3OperationError
+
+    Args:
+        exc: The caught exception instance.
+        is_upload: True when called from within an upload_file operation.
+
+    Raises:
+        S3AuthenticationError, S3BucketNotFoundError, S3InvalidRegionError,
+        S3UploadError, or S3OperationError — always raises, never returns normally.
+    """
+    if isinstance(exc, botocore.exceptions.ClientError):
+        error_response: dict = exc.response.get("Error", {})
+        error_code: str = error_response.get("Code", "")
+        error_message: str = error_response.get("Message", str(exc))
+        detail: str = f"{error_code} — {error_message}"
+
+        logger.error("AWS ClientError: code=%s, message=%s", error_code, error_message)
+
         if error_code in _AUTH_ERROR_CODES:
-            raise S3AuthenticationError(str(error))
-        if error_code == "NoSuchBucket":
-            raise S3BucketNotFoundError(str(error))
+            raise S3AuthenticationError(detail)
+        if error_code in _BUCKET_NOT_FOUND_CODES:
+            raise S3BucketNotFoundError(detail)
         if error_code == "AccessDenied":
-            raise S3AccessDeniedError(str(error))
-        raise S3UploadError(str(error))
+            raise S3BucketNotFoundError(detail)
+        if error_code in _REGION_ERROR_CODES:
+            raise S3InvalidRegionError(detail)
+        if is_upload:
+            raise S3UploadError(detail)
+        raise S3OperationError(detail)
+
+    if isinstance(exc, botocore.exceptions.BotoCoreError):
+        logger.error("AWS BotoCoreError: %s", str(exc))
+        raise S3OperationError(str(exc))
+
+    logger.error("Unexpected error during S3 operation: %s", str(exc))
+    raise S3OperationError(str(exc))

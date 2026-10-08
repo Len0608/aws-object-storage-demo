@@ -1,16 +1,15 @@
 """List Objects action — lists all objects in an S3 bucket as an ASCII table."""
 
 import logging
-import os
-import sys
 
-from tabulate import tabulate
+import botocore.exceptions
 
 from actions.output import ActionOutput
+from exceptions import ValidationError
 from fields.input import InputFields
 from fields.output import OutputFields
 from manager import ExtensionManager
-from utility import S3ClientUtility
+from utility import classify_boto3_error, create_s3_client, format_objects_table
 
 logger = logging.getLogger("UNV")
 extension_manager = ExtensionManager()
@@ -19,110 +18,110 @@ extension_manager = ExtensionManager()
 def list_objects(input_data: InputFields) -> ActionOutput:
     """List all objects in the S3 bucket and display them as an ASCII table.
 
-    Reads the UE_MAX_OUTPUT_RECORDS environment variable (default 100) to cap
-    output. When the total object count exceeds the cap, a truncation notice is
-    written to both STDOUT and STDERR and the Extension Output metadata includes
-    truncated=True and total_count.
+    Reads UE_MAX_OUTPUT_RECORDS (default 100) to cap displayed output. When
+    the total object count exceeds the cap a truncation notice is written to
+    both STDOUT and STDERR. The result_summary OutputField is populated with
+    the total object count on success.
 
     Args:
         input_data: Validated input fields.
 
     Returns:
-        ActionOutput containing object_count, objects list, and — when
-        truncated — truncated flag and total_count.
+        ActionOutput containing bucket, object_count, displayed_count, and objects.
+
+    Raises:
+        ValidationError: If a required field is missing or empty.
+        S3AuthenticationError: If AWS credentials are rejected.
+        S3BucketNotFoundError: If the target bucket does not exist or is inaccessible.
+        S3InvalidRegionError: If the region is invalid or endpoint cannot be resolved.
+        S3OperationError: For any other unclassified AWS error.
     """
     logger.info("Starting list_objects action")
 
-    # Step 1: Read configuration
-    max_records_raw: str = os.environ.get("UE_MAX_OUTPUT_RECORDS", "100")
-    try:
-        max_records = int(max_records_raw)
-        if max_records <= 0:
-            raise ValueError("must be a positive integer")
-    except (ValueError, TypeError):
-        logger.warning(
-            "Invalid UE_MAX_OUTPUT_RECORDS value '%s'; defaulting to 100",
-            max_records_raw,
-        )
-        max_records = 100
-    logger.debug("max_records=%d", max_records)
+    # Step 1: Input validation — fast-fail on missing fields
+    if not input_data.aws_credentials:
+        raise ValidationError("aws_credentials is required")
+    if not input_data.aws_region or not input_data.aws_region.value.strip():
+        raise ValidationError("aws_region is required and must not be empty")
+    if not input_data.bucket_name or not input_data.bucket_name.value.strip():
+        raise ValidationError("bucket_name is required and must not be empty")
 
-    # Initialise real-time output fields
-    output_fields = OutputFields()
-    output_fields.update(status="Initializing")
-
-    bucket_name: str = input_data.bucket_name.value
-    aws_region: str = input_data.aws_region.value
+    aws_region: str = input_data.aws_region.value.strip()
+    bucket_name: str = input_data.bucket_name.value.strip()
 
     logger.debug(
         "Input: bucket_name=%s, aws_region=%s",
-        bucket_name, aws_region,
+        bucket_name,
+        aws_region,
     )
 
-    # Step 2: Initialize S3 client
-    logger.info("Initializing S3 client for region: %s", aws_region)
-    s3_client = S3ClientUtility(
-        access_key_id=input_data.aws_credentials.user,
-        secret_access_key=input_data.aws_credentials.password,
+    # Initialise real-time output field
+    output_fields = OutputFields()
+    output_fields.update(result_summary="Listing objects...")
+
+    # Step 3: Establish S3 client
+    print(f"Connecting to S3 in region '{aws_region}'")
+    s3_client = create_s3_client(
+        aws_access_key_id=input_data.aws_credentials.user,
+        aws_secret_access_key=input_data.aws_credentials.password,
         region_name=aws_region,
     )
 
-    # Step 3: Paginate and collect all objects
-    output_fields.update(status="Listing objects")
+    # Step 4: Retrieve all objects via paginated list_objects_v2
+    print(f"Listing objects in bucket '{bucket_name}'")
     logger.info("Listing objects in bucket: %s", bucket_name)
-    objects, total_count = s3_client.list_objects(bucket_name)
-    logger.info("Collected %d object(s) from bucket '%s'", total_count, bucket_name)
 
-    # Step 4: Apply output cap
-    truncated: bool = False
-    if total_count > max_records:
-        truncated = True
-        objects = objects[:max_records]
-        warning_msg = (
-            f"Output truncated: showing {max_records} of {total_count} "
-            f"objects in bucket '{bucket_name}'"
-        )
-        logger.warning(warning_msg)
-        print(warning_msg, file=sys.stderr)
+    all_objects: list = []
+    kwargs: dict = {"Bucket": bucket_name}
 
-    # Step 5 & 6: Format timestamps and build ASCII table
-    table_rows = []
-    objects_output = []
-    for obj in objects:
-        last_modified_iso: str = obj["LastModified"].isoformat()
-        table_rows.append([obj["Key"], obj["Size"], last_modified_iso])
-        objects_output.append({
-            "key": obj["Key"],
-            "size_bytes": obj["Size"],
-            "last_modified": last_modified_iso,
-        })
+    try:
+        while True:
+            response: dict = s3_client.list_objects_v2(**kwargs)
+            for obj in response.get("Contents", []):
+                all_objects.append({
+                    "key": obj["Key"],
+                    "size": obj["Size"],
+                    "last_modified": obj["LastModified"],
+                })
+            if not response.get("IsTruncated", False):
+                break
+            kwargs["ContinuationToken"] = response["NextContinuationToken"]
+    except Exception as exc:
+        classify_boto3_error(exc)
 
-    headers = ["Key", "Size (bytes)", "Last Modified"]
-    table: str = tabulate(table_rows, headers=headers, tablefmt="rounded_outline")
-    print(table)
-    logger.debug("ASCII table printed to STDOUT")
-
-    if truncated:
-        truncation_notice = (
-            f"[Truncated] Showing {max_records} of {total_count} objects. "
-            "Set UE_MAX_OUTPUT_RECORDS to increase the limit."
-        )
-        print(truncation_notice)
-        logger.debug("Truncation notice printed to STDOUT")
-
-    # Step 7: Populate output-only fields
-    displayed_count: int = len(objects_output)
-    output_fields.update(
-        status=f"Listed {displayed_count} objects",
-        result=f"{displayed_count} objects in {bucket_name}",
+    logger.info(
+        "Collected %d object(s) from bucket '%s'",
+        len(all_objects),
+        bucket_name,
     )
 
-    logger.info("list_objects action completed: %d object(s) listed", displayed_count)
+    # Steps 5–6: Apply output cap and render ASCII table
+    table_str, sliced_objects, total_count, truncation_notice = format_objects_table(all_objects)
+    displayed_count: int = len(sliced_objects)
 
-    # Step 8: Return ActionOutput
+    print(table_str)
+    if truncation_notice:
+        print(truncation_notice)
+
+    # Step 7: Populate result_summary output field and return
+    result_summary_str: str = f"{total_count} objects found in bucket"
+    output_fields.update(result_summary=result_summary_str)
+
+    logger.info(
+        "list_objects action completed: %d object(s) found in '%s'",
+        total_count,
+        bucket_name,
+    )
+    logger.debug(
+        "Returning bucket=%s, object_count=%d, displayed_count=%d",
+        bucket_name,
+        total_count,
+        displayed_count,
+    )
+
     return ActionOutput(
-        object_count=displayed_count,
-        objects=objects_output,
-        truncated=True if truncated else None,
-        total_count=total_count if truncated else None,
+        bucket=bucket_name,
+        object_count=total_count,
+        displayed_count=displayed_count,
+        objects=sliced_objects,
     )

@@ -18,8 +18,7 @@ class OutputFields:
     """
 
     # Output-only fields — populated by the extension at completion
-    status: Optional[Text] = None
-    result: Optional[Text] = None
+    result_summary: Optional[Text] = None
 
     def update(self, **fields):
         """Update fields and sync with UAC UI in real-time.
@@ -50,5 +49,4 @@ class OutputFields:
 
     def clear(self):
         """Reset all fields to None."""
-        self.status = None
-        self.result = None
+        self.result_summary = None

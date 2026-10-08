@@ -121,3 +121,35 @@ class S3UploadError(ExecutionError):
     """
     exit_code = 1
     message = "S3 Upload Error"
+
+class LocalFileNotFoundError(ExecutionError):
+    """
+    Raised when the local file path specified by the user does not exist on the agent host.
+
+    Use when os.path.exists(local_file) returns False before any S3 API call is made.
+    Non-transient — the local_file field value must be corrected to point to an existing file.
+    """
+    exit_code = 1
+    message = "Local File Not Found"
+
+class S3InvalidRegionError(ExecutionError):
+    """
+    Raised when the specified AWS region is invalid or the S3 endpoint cannot be resolved.
+
+    Use when botocore.exceptions.ClientError is raised with error code InvalidRegion,
+    or when an endpoint resolution failure occurs during client construction or API calls.
+    Non-transient — the aws_region field must be corrected to a valid AWS region identifier.
+    """
+    exit_code = 1
+    message = "S3 Invalid Region"
+
+class S3OperationError(ExecutionError):
+    """
+    Raised for any unclassified boto3 or botocore error not covered by a more specific exception.
+
+    Use as the catch-all when botocore.exceptions.ClientError or botocore.exceptions.BotoCoreError
+    is raised and the error code does not map to S3AuthenticationError, S3BucketNotFoundError,
+    S3InvalidRegionError, or S3UploadError. Indicates an unexpected AWS-side or SDK error.
+    """
+    exit_code = 1
+    message = "S3 Operation Error"
