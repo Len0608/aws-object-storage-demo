@@ -121,7 +121,7 @@ For STDOUT, the architect pattern recommends an ASCII table using the `tabulate`
 - **Rationale**: For an MVP demonstration, three informative columns communicate the core value (objects are listed with useful metadata) without overwhelming the output. ETag and Storage Class are implementation details rarely needed in a demo context.
 - **Trade-offs**: Option A is simpler to read. Option B provides more detail but at the cost of wider output that may wrap in narrow terminal views.
 - **Requirement Impact**: None — the requirements do not specify column detail, so either option is additive.
-- **User's Answer**: Option A — Key, Size, Last Modified.
+- **User's Answer**: Option A — Key, Size, Last Modified. Clean and immediately useful for a demo without excess noise.
 
 ---
 
@@ -143,7 +143,7 @@ The recommended pattern is to use an environment variable `UE_MAX_OUTPUT_RECORDS
 - **Rationale**: Even in a demo context, a bucket could contain hundreds of objects. Capping by default makes the extension robust without adding a visible field. The cap is easily overridden by the task operator without touching the extension code.
 - **Trade-offs**: Option A adds a small amount of logic but protects against accidental large output. Option B is marginally simpler to implement but could produce unusable output on real S3 buckets.
 - **Requirement Impact**: None — no new field is added. The limit is controlled via environment variable at the task definition level.
-- **User's Answer**: Option A — 100 record cap with `UE_MAX_OUTPUT_RECORDS` override.
+- **User's Answer**: Option A — 100 record default cap with `UE_MAX_OUTPUT_RECORDS` override. For a demo environment this ensures predictable, clean output without surprises.
 
 ---
 
@@ -165,7 +165,7 @@ For both options, the status description would be: `Success: File uploaded to s3
 - **Rationale**: The MVP goal is to demonstrate that upload works. Knowing the object's S3 path and the size transferred is enough to confirm success. ETag verification is a useful feature but can be added later.
 - **Trade-offs**: Option A is one API call. Option B is two API calls but provides a content fingerprint. For a demo, Option A is simpler and more direct.
 - **Requirement Impact**: None — this is additive output behavior not mentioned in the original requirements.
-- **User's Answer**: Option A — Confirmation with bucket, key, and file size.
+- **User's Answer**: Option A — Confirmation with bucket, key, and file size. Sufficient for a demo without the overhead of a second API call.
 
 ---
 
@@ -194,7 +194,7 @@ Suggested options for each action:
 - **Rationale**: A single shared field delivers immediate visible feedback in the UAC UI with minimal template complexity. For a demo, this communicates success at a glance. Action-specific fields (Option B) add semantic clarity but double the output field definitions.
 - **Trade-offs**: Option A is simpler but uses a generic label. Option B is more descriptive but adds template complexity. Option C provides no at-a-glance feedback in the UAC UI.
 - **Requirement Impact**: None — output field design is not addressed in the requirements.
-- **User's Answer**: Option A — Single `Result Summary` text output field.
+- **User's Answer**: Option A — Single `Result Summary` field populated by both actions. Simple, effective, requires one field definition.
 
 ---
 
@@ -216,4 +216,4 @@ The requirements list "AWS Region" as an input field — this will be a plain te
 - **Rationale**: For an MVP/demo purpose, a sensible default reduces friction without hiding complexity. The field remains visible and editable, so there is no risk of users being unaware it exists.
 - **Trade-offs**: A default introduces an implicit assumption about the region. If demo buckets are in other regions, users must remember to change this. Option B is more explicit but creates a friction point.
 - **Requirement Impact**: None — the field is already required by the requirements; only the default value is being decided.
-- **User's Answer**: Option A — Default value `us-east-1`.
+- **User's Answer**: Option A — Default `us-east-1`. Appropriate for a demo extension, reduces required typing in typical sandbox scenarios.
